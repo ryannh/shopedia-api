@@ -80,28 +80,130 @@ func JWTProtected(db *pgxpool.Pool) fiber.Handler {
 	}
 }
 
-// ACL middleware
+// RoleRequired middleware - check if user has any of the allowed roles
 func RoleRequired(db *pgxpool.Pool, allowedRoles []string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := c.Locals("userID").(int)
 
-		// Query role name user
-		var roleName string
-		err := db.QueryRow(c.Context(),
+		// Get all user roles
+		rows, err := db.Query(c.Context(),
 			`SELECT r.name FROM user_roles ur
 			 JOIN roles r ON ur.role_id = r.id
-			 WHERE ur.user_id = $1 LIMIT 1`,
-			userID).Scan(&roleName)
+			 WHERE ur.user_id = $1 AND r.deleted_at IS NULL`,
+			userID)
 		if err != nil {
 			return fiber.ErrForbidden
 		}
+		defer rows.Close()
 
-		for _, r := range allowedRoles {
-			if r == roleName {
+		userRoles := []string{}
+		for rows.Next() {
+			var roleName string
+			if rows.Scan(&roleName) == nil {
+				userRoles = append(userRoles, roleName)
+			}
+		}
+
+		// super_admin has access to everything
+		for _, role := range userRoles {
+			if role == "super_admin" {
 				return c.Next()
 			}
 		}
 
+		// Check if user has any of the allowed roles
+		for _, userRole := range userRoles {
+			for _, allowedRole := range allowedRoles {
+				if userRole == allowedRole {
+					return c.Next()
+				}
+			}
+		}
+
 		return fiber.ErrForbidden
+	}
+}
+
+// PermissionRequired middleware - check if user has any of the required permissions
+func PermissionRequired(db *pgxpool.Pool, requiredPermissions []string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userID := c.Locals("userID").(int)
+
+		// Check if user is super_admin (has all permissions)
+		var isSuperAdmin bool
+		err := db.QueryRow(c.Context(),
+			`SELECT EXISTS(
+				SELECT 1 FROM user_roles ur
+				JOIN roles r ON ur.role_id = r.id
+				WHERE ur.user_id = $1 AND r.name = 'super_admin' AND r.deleted_at IS NULL
+			)`, userID).Scan(&isSuperAdmin)
+		if err != nil {
+			return fiber.ErrForbidden
+		}
+
+		if isSuperAdmin {
+			return c.Next()
+		}
+
+		// Get user permissions through roles
+		rows, err := db.Query(c.Context(),
+			`SELECT DISTINCT p.name FROM user_roles ur
+			 JOIN role_permissions rp ON ur.role_id = rp.role_id
+			 JOIN permissions p ON rp.permission_id = p.id
+			 WHERE ur.user_id = $1 AND p.deleted_at IS NULL`,
+			userID)
+		if err != nil {
+			return fiber.ErrForbidden
+		}
+		defer rows.Close()
+
+		userPermissions := make(map[string]bool)
+		for rows.Next() {
+			var permName string
+			if rows.Scan(&permName) == nil {
+				userPermissions[permName] = true
+			}
+		}
+
+		// Check if user has any of the required permissions
+		for _, reqPerm := range requiredPermissions {
+			if userPermissions[reqPerm] {
+				return c.Next()
+			}
+
+			// Support wildcard matching: if required is "finance.view",
+			// user having "finance.*" should pass
+			module := strings.Split(reqPerm, ".")[0]
+			if userPermissions[module+".*"] {
+				return c.Next()
+			}
+		}
+
+		return fiber.NewError(fiber.StatusForbidden, "Insufficient permissions")
+	}
+}
+
+// ScopeRequired middleware - check if user's role is in the required scope
+func ScopeRequired(db *pgxpool.Pool, scope string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userID := c.Locals("userID").(int)
+
+		// Check if user has any role in the required scope
+		var hasScope bool
+		err := db.QueryRow(c.Context(),
+			`SELECT EXISTS(
+				SELECT 1 FROM user_roles ur
+				JOIN roles r ON ur.role_id = r.id
+				WHERE ur.user_id = $1 AND r.scope = $2 AND r.deleted_at IS NULL
+			)`, userID, scope).Scan(&hasScope)
+		if err != nil {
+			return fiber.ErrForbidden
+		}
+
+		if !hasScope {
+			return fiber.NewError(fiber.StatusForbidden, "Access denied for this scope")
+		}
+
+		return c.Next()
 	}
 }
