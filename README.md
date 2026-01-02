@@ -165,6 +165,94 @@ Base URL: `/api/admin`
 | PUT    | `/permissions/:uuid`   | super_admin     | Update permission     |
 | DELETE | `/permissions/:uuid`   | super_admin     | Delete permission     |
 
+### Public Products & Categories
+
+Base URL: `/api`
+
+| Method | Endpoint         | Auth | Deskripsi                    |
+| ------ | ---------------- | :--: | ---------------------------- |
+| GET    | `/categories`    |  -   | List active categories       |
+| GET    | `/products`      |  -   | List active products         |
+| GET    | `/products/:uuid`|  -   | Get product detail           |
+
+#### Query Parameters (Products)
+
+| Parameter  | Type   | Default | Deskripsi              |
+| ---------- | ------ | ------- | ---------------------- |
+| `page`     | int    | 1       | Halaman                |
+| `limit`    | int    | 20      | Items per page (max: 100) |
+| `search`   | string | -       | Search by title/description |
+| `category` | string | -       | Filter by category UUID |
+
+### Seller Products (App)
+
+Base URL: `/api/app/my`
+
+| Method | Endpoint         | Auth | Deskripsi              |
+| ------ | ---------------- | :--: | ---------------------- |
+| GET    | `/products`      |  ✅  | List seller's products |
+| GET    | `/products/:uuid`|  ✅  | Get product detail     |
+| POST   | `/products`      |  ✅  | Create new product     |
+| PUT    | `/products/:uuid`|  ✅  | Update product         |
+| DELETE | `/products/:uuid`|  ✅  | Soft delete product    |
+
+#### Create/Update Product Body
+
+```json
+{
+  "title": "Product Name",
+  "description": "Product description",
+  "images": ["https://example.com/img1.jpg", "https://example.com/img2.jpg"],
+  "price": 100000,
+  "stock": 10,
+  "category_uuid": "uuid-of-category",
+  "slug": "optional-custom-slug",
+  "is_active": true
+}
+```
+
+### Admin Category Management (Dashboard)
+
+Base URL: `/api/admin`
+
+| Method | Endpoint            | Permission      | Deskripsi         |
+| ------ | ------------------- | --------------- | ----------------- |
+| GET    | `/categories`       | category.view   | List categories   |
+| GET    | `/categories/:uuid` | category.view   | Get category      |
+| POST   | `/categories`       | category.create | Create category   |
+| PUT    | `/categories/:uuid` | category.update | Update category   |
+| DELETE | `/categories/:uuid` | category.delete | Delete category   |
+
+### Admin Product Management (Dashboard)
+
+Base URL: `/api/admin`
+
+| Method | Endpoint                 | Permission       | Deskripsi        |
+| ------ | ------------------------ | ---------------- | ---------------- |
+| GET    | `/products`              | product.view     | List all products|
+| GET    | `/products/:uuid`        | product.view     | Get product      |
+| POST   | `/products/:uuid/block`  | product.moderate | Block product    |
+| POST   | `/products/:uuid/unblock`| product.moderate | Unblock product  |
+
+#### Block Product Body
+
+```json
+{
+  "reason": "Alasan pemblokiran produk"
+}
+```
+
+#### Query Parameters (Admin Products)
+
+| Parameter  | Type   | Default | Deskripsi               |
+| ---------- | ------ | ------- | ----------------------- |
+| `page`     | int    | 1       | Halaman                 |
+| `limit`    | int    | 20      | Items per page (max: 100) |
+| `search`   | string | -       | Search by title/description |
+| `status`   | string | -       | Filter: active, blocked |
+| `category` | string | -       | Filter by category UUID |
+| `owner`    | string | -       | Filter by owner UUID    |
+
 ---
 
 ## Roles & Permissions
@@ -269,6 +357,7 @@ Migration dijalankan otomatis saat startup. File migration ada di folder `migrat
 | `006_add_is_banned.sql`             | Ban feature                    |
 | `007_add_soft_delete.sql`           | Soft delete                    |
 | `008_roles_permissions_update.sql`  | Enhanced RBAC                  |
+| `009_products_enhancement.sql`      | Products & categories enhancement |
 
 ### Manual Migration
 
@@ -291,6 +380,8 @@ shopedia-api/
 │   │   ├── user.go
 │   │   ├── role.go
 │   │   ├── permission.go
+│   │   ├── category.go
+│   │   ├── product.go
 │   │   └── routes.go
 │   ├── middleware/       # Middleware
 │   │   └── jwt.go

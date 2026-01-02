@@ -20,6 +20,11 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 
 	// Role & Permission routes
 	SetupAdminRoleRoutes(api, db)
+
+	// Product & Category routes
+	SetupPublicRoutes(api, db)
+	SetupSellerRoutes(api, db)
+	SetupAdminProductRoutes(api, db)
 }
 
 // ============================================
@@ -178,4 +183,77 @@ func SetupAdminRoleRoutes(api fiber.Router, db *pgxpool.Pool) {
 	permWrite.Post("/permissions", CreatePermissionHandler(db))
 	permWrite.Put("/permissions/:uuid", UpdatePermissionHandler(db))
 	permWrite.Delete("/permissions/:uuid", DeletePermissionHandler(db))
+}
+
+// ============================================
+// Public Routes (Categories & Products)
+// ============================================
+
+func SetupPublicRoutes(api fiber.Router, db *pgxpool.Pool) {
+	// Public categories - no auth required
+	api.Get("/categories", ListPublicCategoriesHandler(db))
+
+	// Public products - no auth required
+	api.Get("/products", ListPublicProductsHandler(db))
+	api.Get("/products/:uuid", GetPublicProductHandler(db))
+}
+
+// ============================================
+// Seller Routes (App)
+// ============================================
+
+func SetupSellerRoutes(api fiber.Router, db *pgxpool.Pool) {
+	seller := api.Group("/app/my")
+	seller.Use(middleware.JWTProtected(db))
+	seller.Use(middleware.RoleRequired(db, []string{"seller", "end_user"}))
+
+	// Seller product management
+	seller.Get("/products", ListSellerProductsHandler(db))
+	seller.Get("/products/:uuid", GetSellerProductHandler(db))
+	seller.Post("/products", CreateProductHandler(db))
+	seller.Put("/products/:uuid", UpdateProductHandler(db))
+	seller.Delete("/products/:uuid", DeleteProductHandler(db))
+}
+
+// ============================================
+// Admin Product & Category Routes
+// ============================================
+
+func SetupAdminProductRoutes(api fiber.Router, db *pgxpool.Pool) {
+	admin := api.Group("/admin")
+	admin.Use(middleware.JWTProtected(db))
+	admin.Use(middleware.ScopeRequired(db, "dashboard"))
+
+	// Category management - view
+	catView := admin.Group("")
+	catView.Use(middleware.PermissionRequired(db, []string{"category.view"}))
+	catView.Get("/categories", ListCategoriesHandler(db))
+	catView.Get("/categories/:uuid", GetCategoryHandler(db))
+
+	// Category management - create
+	catCreate := admin.Group("")
+	catCreate.Use(middleware.PermissionRequired(db, []string{"category.create"}))
+	catCreate.Post("/categories", CreateCategoryHandler(db))
+
+	// Category management - update
+	catUpdate := admin.Group("")
+	catUpdate.Use(middleware.PermissionRequired(db, []string{"category.update"}))
+	catUpdate.Put("/categories/:uuid", UpdateCategoryHandler(db))
+
+	// Category management - delete
+	catDelete := admin.Group("")
+	catDelete.Use(middleware.PermissionRequired(db, []string{"category.delete"}))
+	catDelete.Delete("/categories/:uuid", DeleteCategoryHandler(db))
+
+	// Product management - view
+	prodView := admin.Group("")
+	prodView.Use(middleware.PermissionRequired(db, []string{"product.view"}))
+	prodView.Get("/products", ListAdminProductsHandler(db))
+	prodView.Get("/products/:uuid", GetAdminProductHandler(db))
+
+	// Product management - moderate (block/unblock)
+	prodModerate := admin.Group("")
+	prodModerate.Use(middleware.PermissionRequired(db, []string{"product.moderate"}))
+	prodModerate.Post("/products/:uuid/block", BlockProductHandler(db))
+	prodModerate.Post("/products/:uuid/unblock", UnblockProductHandler(db))
 }
