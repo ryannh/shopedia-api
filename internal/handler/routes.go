@@ -17,6 +17,9 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 	// User routes
 	SetupAppUserRoutes(api, db)
 	SetupAdminUserRoutes(api, db)
+
+	// Role & Permission routes
+	SetupAdminRoleRoutes(api, db)
 }
 
 // ============================================
@@ -89,23 +92,90 @@ func SetupAdminAuthRoutes(api fiber.Router, db *pgxpool.Pool) {
 func SetupAdminUserRoutes(api fiber.Router, db *pgxpool.Pool) {
 	admin := api.Group("/admin")
 	admin.Use(middleware.JWTProtected(db))
-	admin.Use(middleware.RoleRequired(db, []string{"admin", "super_admin"}))
+	admin.Use(middleware.ScopeRequired(db, "dashboard"))
 
-	// Profile (self)
+	// Profile (self) - all dashboard users
 	admin.Get("/me", GetProfileHandler(db))
 	admin.Put("/me", UpdateProfileHandler(db))
 
+	// User management - requires user.* permissions
+	userMgmt := admin.Group("")
+	userMgmt.Use(middleware.PermissionRequired(db, []string{"user.view"}))
+
 	// Internal user management (exclude end_user)
-	admin.Get("/users", ListUsersHandler(db))
-	admin.Get("/users/:uuid", GetUserHandler(db))
-	admin.Put("/users/:uuid", UpdateUserHandler(db))
-	admin.Delete("/users/:uuid", DeleteUserHandler(db))
-	admin.Post("/users/:uuid/activate", ActivateUserHandler(db))
-	admin.Post("/users/:uuid/deactivate", DeactivateUserHandler(db))
+	userMgmt.Get("/users", ListUsersHandler(db))
+	userMgmt.Get("/users/:uuid", GetUserHandler(db))
+	userMgmt.Get("/users/:uuid/roles", GetUserRolesHandler(db))
+
+	// User write operations
+	userWrite := admin.Group("")
+	userWrite.Use(middleware.PermissionRequired(db, []string{"user.update"}))
+	userWrite.Put("/users/:uuid", UpdateUserHandler(db))
+
+	userDelete := admin.Group("")
+	userDelete.Use(middleware.PermissionRequired(db, []string{"user.delete"}))
+	userDelete.Delete("/users/:uuid", DeleteUserHandler(db))
+
+	userActivate := admin.Group("")
+	userActivate.Use(middleware.PermissionRequired(db, []string{"user.activate"}))
+	userActivate.Post("/users/:uuid/activate", ActivateUserHandler(db))
+	userActivate.Post("/users/:uuid/deactivate", DeactivateUserHandler(db))
 
 	// End user management (only end_user)
-	admin.Get("/end-users", ListEndUsersHandler(db))
-	admin.Get("/end-users/:uuid", GetEndUserHandler(db))
-	admin.Post("/end-users/:uuid/ban", BanEndUserHandler(db))
-	admin.Post("/end-users/:uuid/unban", UnbanEndUserHandler(db))
+	endUserMgmt := admin.Group("")
+	endUserMgmt.Use(middleware.PermissionRequired(db, []string{"user.view"}))
+	endUserMgmt.Get("/end-users", ListEndUsersHandler(db))
+	endUserMgmt.Get("/end-users/:uuid", GetEndUserHandler(db))
+
+	endUserBan := admin.Group("")
+	endUserBan.Use(middleware.PermissionRequired(db, []string{"user.ban"}))
+	endUserBan.Post("/end-users/:uuid/ban", BanEndUserHandler(db))
+	endUserBan.Post("/end-users/:uuid/unban", UnbanEndUserHandler(db))
+
+	// Role assignment to user (super_admin only)
+	roleAssign := admin.Group("")
+	roleAssign.Use(middleware.PermissionRequired(db, []string{"role.assign"}))
+	roleAssign.Post("/users/:uuid/roles", AssignRoleToUserHandler(db))
+	roleAssign.Delete("/users/:uuid/roles/:role_uuid", RemoveRoleFromUserHandler(db))
+}
+
+// ============================================
+// Admin Role & Permission Routes
+// ============================================
+
+func SetupAdminRoleRoutes(api fiber.Router, db *pgxpool.Pool) {
+	admin := api.Group("/admin")
+	admin.Use(middleware.JWTProtected(db))
+	admin.Use(middleware.ScopeRequired(db, "dashboard"))
+
+	// Role management - view
+	roleView := admin.Group("")
+	roleView.Use(middleware.PermissionRequired(db, []string{"role.view"}))
+	roleView.Get("/roles", ListRolesHandler(db))
+	roleView.Get("/roles/:uuid", GetRoleHandler(db))
+
+	// Role management - write (super_admin only)
+	roleWrite := admin.Group("")
+	roleWrite.Use(middleware.RoleRequired(db, []string{"super_admin"}))
+	roleWrite.Post("/roles", CreateRoleHandler(db))
+	roleWrite.Put("/roles/:uuid", UpdateRoleHandler(db))
+	roleWrite.Delete("/roles/:uuid", DeleteRoleHandler(db))
+
+	// Role-Permission assignment (super_admin only)
+	roleWrite.Post("/roles/:uuid/permissions", AssignPermissionsToRoleHandler(db))
+	roleWrite.Delete("/roles/:uuid/permissions/:perm_uuid", RemovePermissionFromRoleHandler(db))
+
+	// Permission management - view
+	permView := admin.Group("")
+	permView.Use(middleware.PermissionRequired(db, []string{"permission.view"}))
+	permView.Get("/permissions", ListPermissionsHandler(db))
+	permView.Get("/permissions/modules", ListPermissionModulesHandler(db))
+	permView.Get("/permissions/:uuid", GetPermissionHandler(db))
+
+	// Permission management - write (super_admin only)
+	permWrite := admin.Group("")
+	permWrite.Use(middleware.RoleRequired(db, []string{"super_admin"}))
+	permWrite.Post("/permissions", CreatePermissionHandler(db))
+	permWrite.Put("/permissions/:uuid", UpdatePermissionHandler(db))
+	permWrite.Delete("/permissions/:uuid", DeletePermissionHandler(db))
 }
