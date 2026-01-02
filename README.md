@@ -21,7 +21,7 @@ REST API untuk platform e-commerce Shopedia, dibangun dengan Go dan Fiber framew
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/shopedia-api.git
+git clone https://github.com/ryannh/shopedia-api.git
 cd shopedia-api
 
 # Install dependencies
@@ -33,14 +33,7 @@ cp .env.example .env
 
 ### Environment Variables
 
-```env
-DB_URL=postgres://user:password@localhost:5432/shopedia?sslmode=disable
-JWT_SECRET=your-super-secret-key
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-```
+Edit file `.env` dan sesuaikan dengan konfigurasi lokal. Lihat `.env.example` untuk referensi.
 
 ### Run Application
 
@@ -62,9 +55,9 @@ Authorization: Bearer <access_token>
 
 ### Token Types
 
-| Type | Penggunaan | Lifetime |
-|------|------------|----------|
-| `access` | Akses API | 24 jam |
+| Type       | Penggunaan     | Lifetime          |
+| ---------- | -------------- | ----------------- |
+| `access`   | Akses API      | 24 jam            |
 | `register` | Registrasi/OTP | Sesuai OTP expiry |
 
 ---
@@ -75,37 +68,37 @@ Authorization: Bearer <access_token>
 
 Base URL: `/api/app`
 
-| Method | Endpoint | Auth | Deskripsi |
-|--------|----------|:----:|-----------|
-| POST | `/register` | - | Register user baru |
-| POST | `/verify-otp` | - | Verifikasi OTP |
-| POST | `/request-new-otp` | - | Request OTP baru |
-| POST | `/login` | - | Login |
-| POST | `/forgot-password` | - | Request reset password |
-| POST | `/reset-password` | - | Reset password |
-| POST | `/logout` | ✅ | Logout |
-| POST | `/logout-all` | ✅ | Logout semua device |
-| POST | `/change-password` | ✅ | Ganti password |
-| GET | `/me` | ✅ | Get profile |
-| PUT | `/me` | ✅ | Update profile |
+| Method | Endpoint           | Auth | Deskripsi              |
+| ------ | ------------------ | :--: | ---------------------- |
+| POST   | `/register`        |  -   | Register user baru     |
+| POST   | `/verify-otp`      |  -   | Verifikasi OTP         |
+| POST   | `/request-new-otp` |  -   | Request OTP baru       |
+| POST   | `/login`           |  -   | Login                  |
+| POST   | `/forgot-password` |  -   | Request reset password |
+| POST   | `/reset-password`  |  -   | Reset password         |
+| POST   | `/logout`          |  ✅  | Logout                 |
+| POST   | `/logout-all`      |  ✅  | Logout semua device    |
+| POST   | `/change-password` |  ✅  | Ganti password         |
+| GET    | `/me`              |  ✅  | Get profile            |
+| PUT    | `/me`              |  ✅  | Update profile         |
 
 ### Admin Authentication
 
 Base URL: `/api/admin`
 
-| Method | Endpoint | Auth | Deskripsi |
-|--------|----------|:----:|-----------|
-| POST | `/register` | - | Register super_admin pertama |
-| POST | `/accept-invite` | - | Accept invite |
-| POST | `/login` | - | Login |
-| POST | `/forgot-password` | - | Request reset password |
-| POST | `/reset-password` | - | Reset password |
-| POST | `/logout` | ✅ | Logout |
-| POST | `/logout-all` | ✅ | Logout semua device |
-| POST | `/change-password` | ✅ | Ganti password |
-| POST | `/invite-user` | ✅ | Invite admin (super_admin) |
-| GET | `/me` | ✅ | Get profile |
-| PUT | `/me` | ✅ | Update profile |
+| Method | Endpoint           | Auth | Deskripsi                    |
+| ------ | ------------------ | :--: | ---------------------------- |
+| POST   | `/register`        |  -   | Register super_admin pertama |
+| POST   | `/accept-invite`   |  -   | Accept invite                |
+| POST   | `/login`           |  -   | Login                        |
+| POST   | `/forgot-password` |  -   | Request reset password       |
+| POST   | `/reset-password`  |  -   | Reset password               |
+| POST   | `/logout`          |  ✅  | Logout                       |
+| POST   | `/logout-all`      |  ✅  | Logout semua device          |
+| POST   | `/change-password` |  ✅  | Ganti password               |
+| POST   | `/invite-user`     |  ✅  | Invite admin (super_admin)   |
+| GET    | `/me`              |  ✅  | Get profile                  |
+| PUT    | `/me`              |  ✅  | Update profile               |
 
 ### User Management
 
@@ -113,64 +106,64 @@ Base URL: `/api/admin`
 
 #### Internal Users (Dashboard)
 
-| Method | Endpoint | Permission | Deskripsi |
-|--------|----------|------------|-----------|
-| GET | `/users` | user.view | List internal users |
-| GET | `/users/:uuid` | user.view | Get user detail |
-| PUT | `/users/:uuid` | user.update | Update user |
-| DELETE | `/users/:uuid` | user.delete | Soft delete user |
-| POST | `/users/:uuid/activate` | user.activate | Activate user |
-| POST | `/users/:uuid/deactivate` | user.activate | Deactivate user |
-| GET | `/users/:uuid/roles` | user.view | Get user roles |
-| POST | `/users/:uuid/roles` | role.assign | Assign role |
-| DELETE | `/users/:uuid/roles/:role_uuid` | role.assign | Remove role |
+| Method | Endpoint                        | Permission    | Deskripsi           |
+| ------ | ------------------------------- | ------------- | ------------------- |
+| GET    | `/users`                        | user.view     | List internal users |
+| GET    | `/users/:uuid`                  | user.view     | Get user detail     |
+| PUT    | `/users/:uuid`                  | user.update   | Update user         |
+| DELETE | `/users/:uuid`                  | user.delete   | Soft delete user    |
+| POST   | `/users/:uuid/activate`         | user.activate | Activate user       |
+| POST   | `/users/:uuid/deactivate`       | user.activate | Deactivate user     |
+| GET    | `/users/:uuid/roles`            | user.view     | Get user roles      |
+| POST   | `/users/:uuid/roles`            | role.assign   | Assign role         |
+| DELETE | `/users/:uuid/roles/:role_uuid` | role.assign   | Remove role         |
 
 #### End Users (App)
 
-| Method | Endpoint | Permission | Deskripsi |
-|--------|----------|------------|-----------|
-| GET | `/end-users` | user.view | List end users |
-| GET | `/end-users/:uuid` | user.view | Get end user detail |
-| POST | `/end-users/:uuid/ban` | user.ban | Ban user |
-| POST | `/end-users/:uuid/unban` | user.ban | Unban user |
+| Method | Endpoint                 | Permission | Deskripsi           |
+| ------ | ------------------------ | ---------- | ------------------- |
+| GET    | `/end-users`             | user.view  | List end users      |
+| GET    | `/end-users/:uuid`       | user.view  | Get end user detail |
+| POST   | `/end-users/:uuid/ban`   | user.ban   | Ban user            |
+| POST   | `/end-users/:uuid/unban` | user.ban   | Unban user          |
 
 #### Query Parameters
 
-| Parameter | Type | Default | Deskripsi |
-|-----------|------|---------|-----------|
-| `page` | int | 1 | Halaman |
-| `limit` | int | 10 | Items per page (max: 100) |
-| `search` | string | - | Search by email/name |
-| `is_active` | bool | - | Filter by status |
-| `role` | string | - | Filter by role |
-| `is_banned` | bool | - | Filter banned (end users) |
+| Parameter   | Type   | Default | Deskripsi                 |
+| ----------- | ------ | ------- | ------------------------- |
+| `page`      | int    | 1       | Halaman                   |
+| `limit`     | int    | 10      | Items per page (max: 100) |
+| `search`    | string | -       | Search by email/name      |
+| `is_active` | bool   | -       | Filter by status          |
+| `role`      | string | -       | Filter by role            |
+| `is_banned` | bool   | -       | Filter banned (end users) |
 
 ### Role Management
 
 Base URL: `/api/admin`
 
-| Method | Endpoint | Permission | Deskripsi |
-|--------|----------|------------|-----------|
-| GET | `/roles` | role.view | List roles |
-| GET | `/roles/:uuid` | role.view | Get role + permissions |
-| POST | `/roles` | super_admin | Create role |
-| PUT | `/roles/:uuid` | super_admin | Update role |
-| DELETE | `/roles/:uuid` | super_admin | Delete role |
-| POST | `/roles/:uuid/permissions` | super_admin | Assign permissions |
-| DELETE | `/roles/:uuid/permissions/:perm_uuid` | super_admin | Remove permission |
+| Method | Endpoint                              | Permission  | Deskripsi              |
+| ------ | ------------------------------------- | ----------- | ---------------------- |
+| GET    | `/roles`                              | role.view   | List roles             |
+| GET    | `/roles/:uuid`                        | role.view   | Get role + permissions |
+| POST   | `/roles`                              | super_admin | Create role            |
+| PUT    | `/roles/:uuid`                        | super_admin | Update role            |
+| DELETE | `/roles/:uuid`                        | super_admin | Delete role            |
+| POST   | `/roles/:uuid/permissions`            | super_admin | Assign permissions     |
+| DELETE | `/roles/:uuid/permissions/:perm_uuid` | super_admin | Remove permission      |
 
 ### Permission Management
 
 Base URL: `/api/admin`
 
-| Method | Endpoint | Permission | Deskripsi |
-|--------|----------|------------|-----------|
-| GET | `/permissions` | permission.view | List permissions |
-| GET | `/permissions/modules` | permission.view | List modules |
-| GET | `/permissions/:uuid` | permission.view | Get permission detail |
-| POST | `/permissions` | super_admin | Create permission |
-| PUT | `/permissions/:uuid` | super_admin | Update permission |
-| DELETE | `/permissions/:uuid` | super_admin | Delete permission |
+| Method | Endpoint               | Permission      | Deskripsi             |
+| ------ | ---------------------- | --------------- | --------------------- |
+| GET    | `/permissions`         | permission.view | List permissions      |
+| GET    | `/permissions/modules` | permission.view | List modules          |
+| GET    | `/permissions/:uuid`   | permission.view | Get permission detail |
+| POST   | `/permissions`         | super_admin     | Create permission     |
+| PUT    | `/permissions/:uuid`   | super_admin     | Update permission     |
+| DELETE | `/permissions/:uuid`   | super_admin     | Delete permission     |
 
 ---
 
@@ -178,41 +171,41 @@ Base URL: `/api/admin`
 
 ### Roles
 
-| Role | Scope | Deskripsi |
-|------|-------|-----------|
-| `super_admin` | dashboard | Full access |
-| `admin` | dashboard | Internal staff |
-| `finance` | dashboard | Tim finance |
-| `support` | dashboard | Customer support |
-| `ops` | dashboard | Moderasi produk |
-| `marketing` | dashboard | Promo & banner |
-| `end_user` | app | User aplikasi |
-| `seller` | app | User + toko |
+| Role          | Scope     | Deskripsi        |
+| ------------- | --------- | ---------------- |
+| `super_admin` | dashboard | Full access      |
+| `admin`       | dashboard | Internal staff   |
+| `finance`     | dashboard | Tim finance      |
+| `support`     | dashboard | Customer support |
+| `ops`         | dashboard | Moderasi produk  |
+| `marketing`   | dashboard | Promo & banner   |
+| `end_user`    | app       | User aplikasi    |
+| `seller`      | app       | User + toko      |
 
 ### Permission Modules
 
-| Module | Permissions |
-|--------|-------------|
-| `finance` | view, export, refund, payout |
-| `support` | view, respond, escalate, close |
-| `product` | view, moderate, delete |
-| `category` | view, create, update, delete |
-| `promo` | view, create, update, delete |
-| `banner` | view, create, update, delete |
-| `user` | view, create, update, delete, ban, activate |
-| `role` | view, create, update, delete, assign |
-| `permission` | view, create, update, delete, assign |
+| Module       | Permissions                                 |
+| ------------ | ------------------------------------------- |
+| `finance`    | view, export, refund, payout                |
+| `support`    | view, respond, escalate, close              |
+| `product`    | view, moderate, delete                      |
+| `category`   | view, create, update, delete                |
+| `promo`      | view, create, update, delete                |
+| `banner`     | view, create, update, delete                |
+| `user`       | view, create, update, delete, ban, activate |
+| `role`       | view, create, update, delete, assign        |
+| `permission` | view, create, update, delete, assign        |
 
 ### Default Permissions
 
-| Role | Permissions |
-|------|-------------|
-| `super_admin` | All (bypass check) |
-| `admin` | user.*, *.view |
-| `finance` | finance.* |
-| `support` | support.* |
-| `ops` | product.*, category.* |
-| `marketing` | promo.*, banner.* |
+| Role          | Permissions           |
+| ------------- | --------------------- |
+| `super_admin` | All (bypass check)    |
+| `admin`       | user._, _.view        |
+| `finance`     | finance.\*            |
+| `support`     | support.\*            |
+| `ops`         | product._, category._ |
+| `marketing`   | promo._, banner._     |
 
 ---
 
@@ -249,16 +242,16 @@ Base URL: `/api/admin`
 
 ### HTTP Status Codes
 
-| Code | Deskripsi |
-|------|-----------|
-| 200 | OK |
-| 201 | Created |
-| 400 | Bad Request |
-| 401 | Unauthorized |
-| 403 | Forbidden |
-| 404 | Not Found |
-| 409 | Conflict |
-| 500 | Internal Server Error |
+| Code | Deskripsi             |
+| ---- | --------------------- |
+| 200  | OK                    |
+| 201  | Created               |
+| 400  | Bad Request           |
+| 401  | Unauthorized          |
+| 403  | Forbidden             |
+| 404  | Not Found             |
+| 409  | Conflict              |
+| 500  | Internal Server Error |
 
 ---
 
@@ -266,16 +259,16 @@ Base URL: `/api/admin`
 
 Migration dijalankan otomatis saat startup. File migration ada di folder `migration/`.
 
-| File | Deskripsi |
-|------|-----------|
-| `001_initial_schema.sql` | Users, roles, permissions, OTP |
-| `002_products_and_transactions.sql` | Products & transactions |
-| `003_create_revoked_tokens.sql` | Token revocation |
-| `004_active_sessions.sql` | Single active session |
-| `005_password_reset_tokens.sql` | Password reset |
-| `006_add_is_banned.sql` | Ban feature |
-| `007_add_soft_delete.sql` | Soft delete |
-| `008_roles_permissions_update.sql` | Enhanced RBAC |
+| File                                | Deskripsi                      |
+| ----------------------------------- | ------------------------------ |
+| `001_initial_schema.sql`            | Users, roles, permissions, OTP |
+| `002_products_and_transactions.sql` | Products & transactions        |
+| `003_create_revoked_tokens.sql`     | Token revocation               |
+| `004_active_sessions.sql`           | Single active session          |
+| `005_password_reset_tokens.sql`     | Password reset                 |
+| `006_add_is_banned.sql`             | Ban feature                    |
+| `007_add_soft_delete.sql`           | Soft delete                    |
+| `008_roles_permissions_update.sql`  | Enhanced RBAC                  |
 
 ### Manual Migration
 
