@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
 	"shopedia-api/internal/handler"
 	"shopedia-api/internal/repository"
+	utils "shopedia-api/internal/util"
 )
 
 func main() {
@@ -23,9 +27,17 @@ func main() {
 	db, err := repository.ConnectDB(os.Getenv("DB_URL"))
 	if err != nil {
 		log.Fatal("DB connection failed:", err)
-	} else {
-		fmt.Println("DB connected")
 	}
+	fmt.Println("DB connected")
+
+	// Run migrations
+	err = repository.RunMigrations(db, "migration")
+	if err != nil {
+		log.Fatal("Migration failed:", err)
+	}
+
+	// Start cleanup goroutine
+	go startTokenCleanup(db)
 
 	// Fiber instance
 	app := fiber.New()
@@ -37,4 +49,26 @@ func main() {
 	port := ":8081"
 	fmt.Println("Server running on", port)
 	log.Fatal(app.Listen(port))
+}
+
+// startTokenCleanup - goroutine untuk cleanup expired tokens setiap 1 jam
+func startTokenCleanup(db *pgxpool.Pool) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	// Jalankan cleanup pertama kali saat startup
+	if err := utils.CleanupExpiredTokens(context.Background(), db); err != nil {
+		log.Printf("Initial token cleanup failed: %v", err)
+	} else {
+		log.Println("Initial token cleanup completed")
+	}
+
+	// Loop untuk cleanup berkala
+	for range ticker.C {
+		if err := utils.CleanupExpiredTokens(context.Background(), db); err != nil {
+			log.Printf("Token cleanup failed: %v", err)
+		} else {
+			log.Println("Token cleanup completed")
+		}
+	}
 }
