@@ -2,16 +2,16 @@ package handler
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+
+	utils "shopedia-api/internal/util"
 )
 
-// Generic Login Handler → pakai param: `mode` → "app" atau "admin"
+// LoginHandler - Generic Login Handler untuk "app" atau "admin"
 func LoginHandler(db *pgxpool.Pool, mode string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		type Input struct {
@@ -40,46 +40,47 @@ func LoginHandler(db *pgxpool.Pool, mode string) fiber.Handler {
 			return fiber.NewError(fiber.StatusUnauthorized, "Account not active")
 		}
 
-		// Mode: Apps → harus role end_user
-		// Mode: Admin → harus ada role admin atau super_admin
-
-		if mode == "app" {
-			var role string
-			err := db.QueryRow(ctx,
-				`SELECT r.name FROM user_roles ur 
-			 JOIN roles r ON ur.role_id = r.id
-			 WHERE ur.user_id = $1 LIMIT 1`, userID).Scan(&role)
-			if err != nil || role != "end_user" {
-				return fiber.ErrForbidden
-			}
-		} else if mode == "admin" {
-			var role string
-			err := db.QueryRow(ctx,
-				`SELECT r.name FROM user_roles ur 
-			 JOIN roles r ON ur.role_id = r.id
-			 WHERE ur.user_id = $1 LIMIT 1`, userID).Scan(&role)
-			if err != nil || (role != "admin" && role != "super_admin") {
-				return fiber.ErrForbidden
-			}
-		}
-
-		// Verify password
+		// Verify password terlebih dahulu sebelum cek role
 		if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(input.Password)) != nil {
 			return fiber.ErrUnauthorized
 		}
 
-		// Generate JWT
+		// Ambil role user
+		var role string
+		err = db.QueryRow(ctx,
+			`SELECT r.name FROM user_roles ur
+			 JOIN roles r ON ur.role_id = r.id
+			 WHERE ur.user_id = $1 LIMIT 1`, userID).Scan(&role)
+		if err != nil {
+			return fiber.ErrForbidden
+		}
+
+		// Validasi role berdasarkan mode
+		if mode == "app" && role != "end_user" {
+			return fiber.ErrForbidden
+		} else if mode == "admin" && (role != "admin" && role != "super_admin") {
+			return fiber.ErrForbidden
+		}
+
+		// Ambil user UUID
 		var userUUID string
-		_ = db.QueryRow(ctx, "SELECT uuid FROM users WHERE id=$1", userID).Scan(&userUUID)
+		err = db.QueryRow(ctx, "SELECT uuid FROM users WHERE id=$1", userID).Scan(&userUUID)
+		if err != nil {
+			return fiber.ErrInternalServerError
+		}
+
+		// Generate Access Token dengan JTI
 		expires := time.Now().Add(24 * time.Hour)
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"user_id":   userID,
-			"user_uuid": userUUID,
-			"exp":       expires.Unix(),
-			"iat":       time.Now().Unix(), // issued at
-			"nbf":       time.Now().Unix(), // not before
-		})
-		tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+		tokenString, jti, err := utils.GenerateAccessToken(userID, userUUID, []string{role}, expires)
+		if err != nil {
+			return fiber.ErrInternalServerError
+		}
+
+		// Set active session (revoke token lama jika ada)
+		err = utils.SetActiveSession(ctx, db, userID, jti, expires)
+		if err != nil {
+			return fiber.ErrInternalServerError
+		}
 
 		return c.JSON(fiber.Map{
 			"access_token": tokenString,
