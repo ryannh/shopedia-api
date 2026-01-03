@@ -8,7 +8,10 @@ REST API untuk platform e-commerce Shopedia, dibangun dengan Go dan Fiber framew
 - **Fiber** v2 - Web framework
 - **PostgreSQL** - Database
 - **pgx** v5 - PostgreSQL driver
+- **Redis** - Queue, Caching & Rate Limiting
+- **Asynq** - Background job processing
 - **JWT** - Authentication
+- **Nginx** - Load Balancer (Production)
 
 ## Getting Started
 
@@ -42,6 +45,247 @@ go run main.go
 ```
 
 Server akan berjalan di `http://localhost:3000`. Migration dijalankan otomatis saat startup.
+
+---
+
+## Docker
+
+### Prerequisites
+
+- Docker 20.10+
+- Docker Compose 2.0+
+
+### Architecture
+
+```
+Production:
+                      ┌→ api-1:3000
+User :80 → nginx:80 → ├→ api-2:3000  (load balanced)
+                      └→ api-n:3000
+                            ↓
+              ┌─────────────┴─────────────┐
+              ↓                           ↓
+         PostgreSQL                     Redis
+              ↑                           ↑
+              └─────────────┬─────────────┘
+                            ↓
+                    worker-1, worker-n
+```
+
+### Quick Start (Production)
+
+Jalankan aplikasi lengkap dengan load balancer:
+
+```bash
+# Copy environment file
+cp .env.example .env
+
+# Edit .env sesuai kebutuhan (terutama JWT_SECRET dan SMTP)
+
+# Build dan jalankan
+docker-compose up -d
+
+# Lihat logs
+docker-compose logs -f api
+```
+
+Aplikasi akan berjalan di `http://localhost` (port 80 via nginx)
+
+### Scaling (Production)
+
+```bash
+# Scale API ke 3 instances
+docker-compose up -d --scale api=3
+
+# Scale Worker ke 2 instances
+docker-compose up -d --scale worker=2
+
+# Scale keduanya
+docker-compose up -d --scale api=3 --scale worker=2
+```
+
+### Development Mode
+
+Untuk development, jalankan PostgreSQL + Redis via Docker, API & Worker lokal:
+
+```bash
+# Terminal 1: Jalankan PostgreSQL + Redis
+docker-compose -f docker-compose.dev.yml up -d
+
+# Terminal 2: Jalankan Worker
+go run cmd/worker/main.go
+
+# Terminal 3: Jalankan API
+go run main.go
+```
+
+API akan berjalan di `http://localhost:3000`
+
+### Docker Commands
+
+```bash
+# Build image saja
+docker-compose build
+
+# Start services
+docker-compose up -d
+
+# Stop services
+docker-compose down
+
+# Stop dan hapus volumes (reset database)
+docker-compose down -v
+
+# Lihat logs
+docker-compose logs -f
+
+# Restart service tertentu
+docker-compose restart api
+
+# Masuk ke container PostgreSQL
+docker exec -it shopedia-db psql -U shopedia -d shopedia
+```
+
+### Environment Variables (Docker)
+
+| Variable          | Default       | Deskripsi              |
+| ----------------- | ------------- | ---------------------- |
+| `POSTGRES_USER`   | shopedia      | PostgreSQL username    |
+| `POSTGRES_PASSWORD` | shopedia123 | PostgreSQL password    |
+| `POSTGRES_DB`     | shopedia      | PostgreSQL database    |
+| `JWT_SECRET`      | -             | JWT secret key (wajib) |
+| `SMTP_HOST`       | smtp.gmail.com| SMTP server            |
+| `SMTP_PORT`       | 587           | SMTP port              |
+| `SMTP_USER`       | -             | SMTP username          |
+| `SMTP_PASS`       | -             | SMTP password          |
+| `PORT`            | 3000          | Application port       |
+| `REDIS_URL`       | redis://localhost:6379 | Redis connection URL |
+
+---
+
+## Queue & Worker
+
+Shopedia API menggunakan **Asynq** dengan **Redis** untuk background job processing.
+
+### Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   API       │────▶│   Redis     │◀────│   Worker    │
+│  (Producer) │     │   (Queue)   │     │  (Consumer) │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### Available Task Types
+
+| Task Type             | Queue    | Deskripsi                    |
+| --------------------- | -------- | ---------------------------- |
+| `email:send`          | default  | Send generic email           |
+| `email:otp`           | critical | Send OTP verification        |
+| `email:welcome`       | default  | Send welcome email           |
+| `email:password_reset`| critical | Send password reset email    |
+| `notification:send`   | default  | Send user notification       |
+| `product:index`       | low      | Index product for search     |
+
+### Running Worker
+
+```bash
+# Development (local)
+go run cmd/worker/main.go
+
+# Production (Docker)
+docker-compose up -d worker
+
+# Lihat worker logs
+docker-compose logs -f worker
+```
+
+### Enqueueing Tasks
+
+```go
+import "shopedia-api/internal/queue"
+
+// Send OTP email
+task, _ := queue.NewSendOTPTask("user@email.com", "123456", "John")
+queue.Enqueue(task, asynq.Queue("critical"))
+
+// Send welcome email
+task, _ := queue.NewSendWelcomeTask("user@email.com", "John")
+queue.Enqueue(task)
+
+// Send notification
+task, _ := queue.NewNotificationTask(userID, "Title", "Message", "info")
+queue.Enqueue(task)
+```
+
+### Queue Priority
+
+| Queue    | Weight | Use Case                    |
+| -------- | ------ | --------------------------- |
+| critical | 6      | OTP, password reset, urgent |
+| default  | 3      | Welcome email, notifications|
+| low      | 1      | Indexing, cleanup, reports  |
+
+---
+
+## Redis Caching
+
+Shopedia API menggunakan Redis untuk caching data yang sering diakses.
+
+### Cache Layers
+
+| Data | TTL | Key Pattern | Deskripsi |
+| ---- | --- | ----------- | --------- |
+| Categories | 1 jam | `cache:categories` | List semua kategori aktif |
+| Session | 24 jam | `session:{jti}` | Active session data |
+| OTP | 5 menit | `otp:{email}` | OTP verification dengan attempt tracking |
+| Rate Limit | 1-5 menit | `ratelimit:{key}` | Request rate limiting |
+
+### Cache Strategy
+
+- **Write-through**: Session dan OTP disimpan ke Redis + PostgreSQL
+- **Cache-aside**: Categories di-cache saat pertama kali diakses
+- **Auto-invalidation**: Categories cache di-invalidate saat create/update/delete
+- **Graceful fallback**: Jika Redis down, fallback ke PostgreSQL
+
+### Cache Headers
+
+Response dari cached endpoints menyertakan header:
+```
+X-Cache: HIT   # Data dari cache
+X-Cache: MISS  # Data dari database
+```
+
+---
+
+## Rate Limiting
+
+API menggunakan Redis-based rate limiting untuk mencegah abuse.
+
+### Rate Limit Rules
+
+| Endpoint | Limit | Window | Deskripsi |
+| -------- | ----- | ------ | --------- |
+| `/app/register` | 5 req | 1 menit | Strict limit |
+| `/app/login` | 5 req | 1 menit | Strict limit |
+| `/app/verify-otp` | 5 req | 1 menit | Strict limit |
+| `/app/request-new-otp` | 3 req | 5 menit | OTP limit |
+| `/app/forgot-password` | 5 req | 1 menit | Strict limit |
+| `/app/reset-password` | 5 req | 1 menit | Strict limit |
+| Other endpoints | 100 req | 1 menit | Default limit |
+
+### Rate Limit Headers
+
+```
+X-RateLimit-Limit: 100        # Max requests
+X-RateLimit-Remaining: 95     # Remaining requests
+X-RateLimit-Reset: 1704067200 # Reset timestamp (Unix)
+Retry-After: 60               # Seconds to wait (saat limit exceeded)
+```
+
+### OTP Attempt Tracking
+
+OTP verification memiliki max 3 attempts. Setelah 3x salah, harus request OTP baru.
 
 ---
 
@@ -371,7 +615,12 @@ psql -d shopedia -f migration/001_initial_schema.sql
 
 ```
 shopedia-api/
+├── cmd/
+│   └── worker/           # Worker entry point
+│       └── main.go
 ├── internal/
+│   ├── cache/            # Redis caching
+│   │   └── redis.go
 │   ├── handler/          # HTTP handlers
 │   │   ├── app_auth.go
 │   │   ├── login.go
@@ -384,18 +633,27 @@ shopedia-api/
 │   │   ├── product.go
 │   │   └── routes.go
 │   ├── middleware/       # Middleware
-│   │   └── jwt.go
+│   │   ├── jwt.go
+│   │   └── ratelimit.go
+│   ├── queue/            # Queue & Tasks
+│   │   ├── client.go
+│   │   ├── tasks.go
+│   │   └── handlers.go
 │   ├── repository/       # Database
 │   │   └── db.go
 │   └── util/             # Utilities
 │       └── jwt.go
 ├── migration/            # SQL migrations
-├── main.go
+├── main.go               # API entry point
+├── Dockerfile            # API Dockerfile
+├── Dockerfile.worker     # Worker Dockerfile
+├── docker-compose.yml    # Production compose (with nginx)
+├── docker-compose.dev.yml # Development compose
+├── nginx.conf            # Nginx load balancer config
 ├── go.mod
 ├── go.sum
 ├── .env
-├── README.md
-└── changes-history.md
+└── README.md
 ```
 
 ---
@@ -403,13 +661,16 @@ shopedia-api/
 ## Security Features
 
 - JWT dengan JTI untuk token tracking
-- Single active session per user
+- Single active session per user (Redis-cached)
 - Token revocation
 - Password hashing dengan bcrypt
 - Soft delete (data tidak dihapus permanen)
 - Role-based access control (RBAC)
 - Permission-based authorization
 - Auto session clear saat ban/deactivate/delete
+- Redis-based rate limiting
+- OTP attempt tracking (max 3 attempts)
+- Graceful fallback saat Redis unavailable
 
 ---
 
