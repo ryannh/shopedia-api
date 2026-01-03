@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
+	"shopedia-api/internal/cache"
 	utils "shopedia-api/internal/util"
 )
 
@@ -70,25 +71,42 @@ func RegisterHandler(db *pgxpool.Pool) fiber.Handler {
 			return fiber.NewError(fiber.StatusInternalServerError, "insert user roles failed")
 		}
 
-		// Buat OTP
+		// Buat OTP - Check Redis first
 		var expiresAt time.Time
-		err = db.QueryRow(ctx, `
-			SELECT expires_at FROM otp_codes
-			WHERE user_id=$1 AND is_used=FALSE AND expires_at > NOW()`,
-			userID).Scan(&expiresAt)
-		if err != nil {
-			// Insert OTP baru
+		var otpSent bool
+
+		if cache.Client != nil {
+			// Check if OTP exists in Redis
+			otpData, err := cache.GetOTP(input.Email)
+			if err == nil && otpData != nil {
+				// OTP masih valid di Redis
+				expiresAt = otpData.CreatedAt.Add(cache.TTLOTP)
+				otpSent = true
+			}
+		}
+
+		if !otpSent {
+			// Generate new OTP
 			otp := generateOTP()
-			expiresAt = time.Now().Add(2 * time.Minute)
+			expiresAt = time.Now().Add(cache.TTLOTP)
+
+			// Store in Redis (primary)
+			if cache.Client != nil {
+				if err := cache.SetOTP(input.Email, otp); err != nil {
+					return fiber.NewError(fiber.StatusInternalServerError, "Failed to store OTP")
+				}
+			}
+
+			// Store in database (backup)
 			_, err = db.Exec(ctx, `
 				INSERT INTO otp_codes (user_id, otp_code, expires_at) VALUES ($1, $2, $3)`,
 				userID, otp, expiresAt)
 			if err != nil {
 				return fiber.NewError(fiber.StatusInternalServerError, "Insert otp code failed")
 			}
+
 			sendOTP(input.Email, otp)
 		}
-		// Jika sudah ada OTP aktif, gunakan expiresAt yang sudah di-scan
 
 		// Generate register_access_token dengan JTI
 		var userUUID string
@@ -134,22 +152,49 @@ func VerifyOTPHandler(db *pgxpool.Pool) fiber.Handler {
 		userID := claims.UserID
 		ctx := context.Background()
 
-		var otpID int
-		err = db.QueryRow(ctx, `
-			SELECT id FROM otp_codes
-			WHERE user_id=$1 AND otp_code=$2 AND is_used=FALSE AND expires_at > NOW()`,
-			userID, input.OtpCode).Scan(&otpID)
+		// Get user email for Redis lookup
+		var email string
+		err = db.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, userID).Scan(&email)
 		if err != nil {
-			return fiber.NewError(fiber.StatusUnauthorized, "Invalid or expired OTP")
+			return fiber.ErrUnauthorized
 		}
 
+		// Verify OTP - Check Redis first
+		var otpValid bool
+		if cache.Client != nil {
+			otpData, err := cache.GetOTP(email)
+			if err == nil && otpData != nil && otpData.OTP == input.OtpCode {
+				// Check max attempts (max 3 attempts)
+				if otpData.Attempts >= 3 {
+					return fiber.NewError(fiber.StatusTooManyRequests, "Too many attempts, request new OTP")
+				}
+				otpValid = true
+				// Delete OTP from Redis after successful verification
+				_ = cache.DeleteOTP(email)
+			} else if otpData != nil {
+				// Wrong OTP, increment attempts
+				_ = cache.IncrementOTPAttempts(email)
+			}
+		}
+
+		// Fallback to database if Redis not available or OTP not found
+		if !otpValid {
+			var otpID int
+			err = db.QueryRow(ctx, `
+				SELECT id FROM otp_codes
+				WHERE user_id=$1 AND otp_code=$2 AND is_used=FALSE AND expires_at > NOW()`,
+				userID, input.OtpCode).Scan(&otpID)
+			if err != nil {
+				return fiber.NewError(fiber.StatusUnauthorized, "Invalid or expired OTP")
+			}
+			// Mark OTP as used in database
+			_, _ = db.Exec(ctx, `UPDATE otp_codes SET is_used=TRUE WHERE id=$1`, otpID)
+		}
+
+		// Activate user
 		_, err = db.Exec(ctx, `UPDATE users SET is_active=TRUE WHERE id=$1`, userID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "update user is_active failed")
-		}
-		_, err = db.Exec(ctx, `UPDATE otp_codes SET is_used=TRUE WHERE id=$1`, otpID)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "Update otp code is_used failed")
 		}
 
 		return c.JSON(fiber.Map{"message": "OTP verified, account activated"})
@@ -180,18 +225,34 @@ func RequestNewOTPHandler(db *pgxpool.Pool) fiber.Handler {
 		userID := claims.UserID
 		ctx := context.Background()
 
-		var expiresAt time.Time
-		err = db.QueryRow(ctx, `
-			SELECT expires_at FROM otp_codes
-			WHERE user_id=$1 AND is_used=FALSE AND expires_at > NOW()`,
-			userID).Scan(&expiresAt)
-		if err == nil {
-			return c.JSON(fiber.Map{"expired_otp_at": expiresAt})
+		// Get user email
+		var email string
+		err = db.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, userID).Scan(&email)
+		if err != nil {
+			return fiber.ErrInternalServerError
 		}
 
-		// Buat OTP baru
+		// Check Redis first for existing OTP
+		if cache.Client != nil {
+			otpData, err := cache.GetOTP(email)
+			if err == nil && otpData != nil {
+				expiresAt := otpData.CreatedAt.Add(cache.TTLOTP)
+				return c.JSON(fiber.Map{"expired_otp_at": expiresAt.Format(time.RFC3339)})
+			}
+		}
+
+		// Generate new OTP
 		otp := generateOTP()
-		expiresAt = time.Now().Add(2 * time.Minute)
+		expiresAt := time.Now().Add(cache.TTLOTP)
+
+		// Store in Redis (primary)
+		if cache.Client != nil {
+			if err := cache.SetOTP(email, otp); err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to store OTP")
+			}
+		}
+
+		// Store in database (backup)
 		_, err = db.Exec(ctx, `
 			INSERT INTO otp_codes (user_id, otp_code, expires_at) VALUES ($1, $2, $3)`,
 			userID, otp, expiresAt)
@@ -199,14 +260,9 @@ func RequestNewOTPHandler(db *pgxpool.Pool) fiber.Handler {
 			return fiber.NewError(fiber.StatusInternalServerError, "Insert otp code failed")
 		}
 
-		var email string
-		err = db.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, userID).Scan(&email)
-		if err != nil {
-			return fiber.ErrInternalServerError
-		}
 		sendOTP(email, otp)
 
-		return c.JSON(fiber.Map{"expired_otp_at": expiresAt})
+		return c.JSON(fiber.Map{"expired_otp_at": expiresAt.Format(time.RFC3339)})
 	}
 }
 
