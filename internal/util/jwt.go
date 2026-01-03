@@ -9,6 +9,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"shopedia-api/internal/cache"
 )
 
 type TokenType string
@@ -155,7 +157,7 @@ func CleanupExpiredTokens(ctx context.Context, db *pgxpool.Pool) error {
 // ============================================
 
 // SetActiveSession - simpan session aktif baru dan revoke session lama
-func SetActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti string, expiresAt time.Time) error {
+func SetActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti string, expiresAt time.Time, email string, role string) error {
 	// Ambil JTI lama jika ada
 	var oldJTI string
 	var oldExpiresAt time.Time
@@ -163,22 +165,51 @@ func SetActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti str
 		`SELECT jti, expires_at FROM active_sessions WHERE user_id = $1`,
 		userID).Scan(&oldJTI, &oldExpiresAt)
 
-	// Jika ada session lama, revoke tokennya
+	// Jika ada session lama, revoke tokennya dan hapus dari Redis
 	if err == nil && oldJTI != "" {
 		_ = RevokeToken(ctx, db, oldJTI, userID, oldExpiresAt)
+		// Delete old session from Redis
+		if cache.Client != nil {
+			_ = cache.DeleteSession(oldJTI)
+		}
 	}
 
-	// Insert atau update session baru
+	// Insert atau update session baru di database
 	_, err = db.Exec(ctx,
 		`INSERT INTO active_sessions (user_id, jti, expires_at)
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (user_id) DO UPDATE SET jti = $2, expires_at = $3, created_at = NOW()`,
 		userID, jti, expiresAt)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Store session in Redis for fast lookup
+	if cache.Client != nil {
+		sessionData := &cache.SessionData{
+			UserID:    userID,
+			JTI:       jti,
+			Email:     email,
+			Role:      role,
+			CreatedAt: time.Now(),
+		}
+		_ = cache.SetSession(jti, sessionData)
+	}
+
+	return nil
 }
 
 // IsActiveSession - cek apakah JTI adalah session yang aktif
 func IsActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti string) bool {
+	// Check Redis first for faster lookup
+	if cache.Client != nil {
+		session, err := cache.GetSession(jti)
+		if err == nil && session != nil {
+			return session.UserID == userID
+		}
+	}
+
+	// Fallback to database
 	var activeJTI string
 	err := db.QueryRow(ctx,
 		`SELECT jti FROM active_sessions WHERE user_id = $1`,
@@ -190,7 +221,22 @@ func IsActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti stri
 }
 
 // ClearActiveSession - hapus session aktif (untuk logout)
-func ClearActiveSession(ctx context.Context, db *pgxpool.Pool, userID int) error {
+// jti parameter is optional - if empty, will query from database
+func ClearActiveSession(ctx context.Context, db *pgxpool.Pool, userID int, jti string) error {
+	// If JTI not provided, try to get it from database for Redis cleanup
+	if cache.Client != nil {
+		sessionJTI := jti
+		if sessionJTI == "" {
+			_ = db.QueryRow(ctx,
+				`SELECT jti FROM active_sessions WHERE user_id = $1`,
+				userID).Scan(&sessionJTI)
+		}
+		if sessionJTI != "" {
+			_ = cache.DeleteSession(sessionJTI)
+		}
+	}
+
+	// Delete from database
 	_, err := db.Exec(ctx,
 		`DELETE FROM active_sessions WHERE user_id = $1`,
 		userID)

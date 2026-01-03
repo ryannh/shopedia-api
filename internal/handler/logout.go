@@ -23,7 +23,7 @@ func LogoutHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session
-		err = utils.ClearActiveSession(c.Context(), db, userID)
+		err = utils.ClearActiveSession(c.Context(), db, userID, jti)
 		if err != nil {
 			return fiber.ErrInternalServerError
 		}
@@ -49,7 +49,7 @@ func LogoutAllHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session
-		err = utils.ClearActiveSession(c.Context(), db, userID)
+		err = utils.ClearActiveSession(c.Context(), db, userID, jti)
 		if err != nil {
 			return fiber.ErrInternalServerError
 		}

@@ -391,7 +391,7 @@ func DeleteUserHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session first
-		_ = utils.ClearActiveSession(ctx, db, targetUserID)
+		_ = utils.ClearActiveSession(ctx, db, targetUserID, "")
 
 		// Soft delete user (set deleted_at timestamp)
 		_, err = db.Exec(ctx, `UPDATE users SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`, targetUserID)
@@ -487,7 +487,7 @@ func DeactivateUserHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session (force logout)
-		_ = utils.ClearActiveSession(ctx, db, targetUserID)
+		_ = utils.ClearActiveSession(ctx, db, targetUserID, "")
 
 		return c.JSON(fiber.Map{
 			"message": "User deactivated successfully",
@@ -687,7 +687,7 @@ func BanEndUserHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session (force logout)
-		_ = utils.ClearActiveSession(ctx, db, targetUserID)
+		_ = utils.ClearActiveSession(ctx, db, targetUserID, "")
 
 		return c.JSON(fiber.Map{
 			"message": "User banned successfully",

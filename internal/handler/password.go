@@ -132,7 +132,7 @@ func ResetPasswordHandler(db *pgxpool.Pool) fiber.Handler {
 		}
 
 		// Clear active session (force re-login)
-		_ = utils.ClearActiveSession(ctx, db, userID)
+		_ = utils.ClearActiveSession(ctx, db, userID, "")
 
 		return c.JSON(fiber.Map{
 			"message": "Password reset successfully, please login with new password",

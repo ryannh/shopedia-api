@@ -77,7 +77,7 @@ func LoginHandler(db *pgxpool.Pool, mode string) fiber.Handler {
 		}
 
 		// Set active session (revoke token lama jika ada)
-		err = utils.SetActiveSession(ctx, db, userID, jti, expires)
+		err = utils.SetActiveSession(ctx, db, userID, jti, expires, input.Email, role)
 		if err != nil {
 			return fiber.ErrInternalServerError
 		}
