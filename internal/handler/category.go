@@ -2,10 +2,13 @@ package handler
 
 import (
 	"context"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"shopedia-api/internal/cache"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,6 +51,18 @@ func generateSlug(name string) string {
 // ListPublicCategoriesHandler - GET /categories - list active categories (public)
 func ListPublicCategoriesHandler(db *pgxpool.Pool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		// Try to get from cache first
+		var cachedCategories []CategoryResponse
+		if cache.Client != nil {
+			err := cache.GetCategories(&cachedCategories)
+			if err == nil && len(cachedCategories) > 0 {
+				c.Set("X-Cache", "HIT")
+				return c.JSON(fiber.Map{
+					"categories": cachedCategories,
+				})
+			}
+		}
+
 		ctx := context.Background()
 
 		rows, err := db.Query(ctx, `
@@ -71,6 +86,14 @@ func ListPublicCategoriesHandler(db *pgxpool.Pool) fiber.Handler {
 			categories = append(categories, cat)
 		}
 
+		// Cache the result
+		if cache.Client != nil {
+			if err := cache.SetCategories(categories); err != nil {
+				log.Printf("Failed to cache categories: %v", err)
+			}
+		}
+
+		c.Set("X-Cache", "MISS")
 		return c.JSON(fiber.Map{
 			"categories": categories,
 		})
@@ -242,6 +265,11 @@ func CreateCategoryHandler(db *pgxpool.Pool) fiber.Handler {
 			return fiber.ErrInternalServerError
 		}
 
+		// Invalidate categories cache
+		if cache.Client != nil {
+			cache.InvalidateCategories()
+		}
+
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"message": "Category created successfully",
 			"uuid":    catUUID,
@@ -326,6 +354,11 @@ func UpdateCategoryHandler(db *pgxpool.Pool) fiber.Handler {
 			}
 		}
 
+		// Invalidate categories cache
+		if cache.Client != nil {
+			cache.InvalidateCategories()
+		}
+
 		return c.JSON(fiber.Map{
 			"message": "Category updated successfully",
 		})
@@ -363,6 +396,11 @@ func DeleteCategoryHandler(db *pgxpool.Pool) fiber.Handler {
 			catID)
 		if err != nil {
 			return fiber.ErrInternalServerError
+		}
+
+		// Invalidate categories cache
+		if cache.Client != nil {
+			cache.InvalidateCategories()
 		}
 
 		return c.JSON(fiber.Map{
