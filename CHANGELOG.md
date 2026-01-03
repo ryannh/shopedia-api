@@ -4,6 +4,102 @@ Catatan perubahan dan implementasi fitur pada project Shopedia API.
 
 ---
 
+## [Unreleased] - 2026-01-03
+
+### Redis Caching
+
+#### Session Caching
+- Implementasi Redis caching untuk active sessions
+- `SetActiveSession()` - simpan session ke Redis + PostgreSQL
+- `IsActiveSession()` - check Redis first, fallback ke DB
+- `ClearActiveSession()` - hapus dari Redis + DB
+- TTL: 24 jam
+
+#### OTP Caching
+- Implementasi Redis caching untuk OTP verification
+- `SetOTP()` - simpan OTP ke Redis dengan TTL 5 menit
+- `GetOTP()` - ambil OTP dari Redis
+- `IncrementOTPAttempts()` - tracking attempt count
+- `DeleteOTP()` - hapus setelah verifikasi berhasil
+- Max 3 attempts sebelum harus request OTP baru
+
+#### Categories Caching
+- Cache list categories dengan TTL 1 jam
+- Auto-invalidate saat create/update/delete
+- Response header `X-Cache: HIT/MISS`
+
+#### Graceful Fallback
+- Semua cache operations check `cache.Client != nil`
+- Fallback ke PostgreSQL jika Redis unavailable
+- Non-blocking Redis errors
+
+### Rate Limiting
+
+#### Middleware Implementation
+- `RateLimit()` - generic configurable rate limiter
+- `RateLimitByIP()` - 100 requests/minute per IP
+- `RateLimitByUser()` - rate limit by user ID
+- `RateLimitByEndpoint()` - endpoint-specific limits
+- `StrictRateLimit()` - 5 requests/minute untuk sensitive endpoints
+- `OTPRateLimit()` - 3 requests/5 minutes untuk OTP
+
+#### Protected Endpoints
+- `/app/register` - StrictRateLimit
+- `/app/verify-otp` - StrictRateLimit
+- `/app/request-new-otp` - OTPRateLimit
+- `/app/login` - StrictRateLimit
+- `/app/forgot-password` - StrictRateLimit
+- `/app/reset-password` - StrictRateLimit
+
+#### Rate Limit Headers
+- `X-RateLimit-Limit` - max requests
+- `X-RateLimit-Remaining` - remaining requests
+- `X-RateLimit-Reset` - reset timestamp
+- `Retry-After` - seconds to wait (saat exceeded)
+
+### Load Balancer
+
+#### Nginx Integration
+- Tambah `nginx.conf` untuk load balancing
+- Round-robin distribution ke multiple API instances
+- WebSocket support ready
+- Health check endpoint `/health`
+
+#### Docker Compose Updates
+- Tambah nginx service sebagai entry point
+- API service scalable (hapus container_name)
+- Worker service scalable
+- Port 80 untuk production (via nginx)
+
+#### Scaling Support
+- `docker-compose up -d --scale api=3` - scale API
+- `docker-compose up -d --scale worker=2` - scale Worker
+- Stateless API (session di Redis, bukan memory)
+
+### Files Changed/Added
+```
+internal/cache/
+└── redis.go             (new)
+
+internal/middleware/
+└── ratelimit.go         (new)
+
+internal/util/
+└── jwt.go               (modified - Redis session integration)
+
+internal/handler/
+├── app_auth.go          (modified - Redis OTP integration)
+├── login.go             (modified - SetActiveSession params)
+├── logout.go            (modified - ClearActiveSession params)
+├── password.go          (modified - ClearActiveSession params)
+└── user.go              (modified - ClearActiveSession params)
+
+nginx.conf               (new)
+docker-compose.yml       (modified - nginx + scalable services)
+```
+
+---
+
 ## [Unreleased] - 2026-01-02
 
 ### Security & Authentication
