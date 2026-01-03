@@ -32,13 +32,13 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 // ============================================
 
 func SetupAppAuthRoutes(api fiber.Router, db *pgxpool.Pool) {
-	// Public endpoints
-	api.Post("/app/register", RegisterHandler(db))
-	api.Post("/app/verify-otp", VerifyOTPHandler(db))
-	api.Post("/app/request-new-otp", RequestNewOTPHandler(db))
-	api.Post("/app/login", LoginHandler(db, "app"))
-	api.Post("/app/forgot-password", ForgotPasswordHandler(db))
-	api.Post("/app/reset-password", ResetPasswordHandler(db))
+	// Public endpoints with rate limiting
+	api.Post("/app/register", middleware.StrictRateLimit(), RegisterHandler(db))
+	api.Post("/app/verify-otp", middleware.StrictRateLimit(), VerifyOTPHandler(db))
+	api.Post("/app/request-new-otp", middleware.OTPRateLimit(), RequestNewOTPHandler(db))
+	api.Post("/app/login", middleware.StrictRateLimit(), LoginHandler(db, "app"))
+	api.Post("/app/forgot-password", middleware.StrictRateLimit(), ForgotPasswordHandler(db))
+	api.Post("/app/reset-password", middleware.StrictRateLimit(), ResetPasswordHandler(db))
 
 	// Protected auth endpoints
 	appAuth := api.Group("/app")
