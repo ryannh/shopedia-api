@@ -11,7 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
+	"shopedia-api/internal/cache"
 	"shopedia-api/internal/handler"
+	"shopedia-api/internal/queue"
 	"shopedia-api/internal/repository"
 	utils "shopedia-api/internal/util"
 )
@@ -36,6 +38,20 @@ func main() {
 		log.Fatal("Migration failed:", err)
 	}
 
+	// Initialize queue client
+	queue.InitClient()
+	defer queue.CloseClient()
+	fmt.Println("Queue client initialized")
+
+	// Initialize Redis cache
+	err = cache.InitRedis()
+	if err != nil {
+		log.Printf("Redis connection failed (caching disabled): %v", err)
+	} else {
+		defer cache.CloseRedis()
+		fmt.Println("Redis cache initialized")
+	}
+
 	// Start cleanup goroutine
 	go startTokenCleanup(db)
 
@@ -46,7 +62,7 @@ func main() {
 	handler.SetupRoutes(app, db)
 
 	// Start
-	port := ":8081"
+	port := ":3000"
 	fmt.Println("Server running on", port)
 	log.Fatal(app.Listen(port))
 }
